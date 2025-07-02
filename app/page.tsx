@@ -1,7 +1,5 @@
-"use client"
+import StrokeProtocolApp from "../stroke-protocol-app"
 
-import StrokeProtocolApp from "../stroke-protocol-app (1)"
-
-export default function SyntheticV0PageForDeployment() {
+export default function Page() {
   return <StrokeProtocolApp />
 }
