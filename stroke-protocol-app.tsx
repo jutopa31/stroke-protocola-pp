@@ -1724,8 +1724,8 @@ const StrokeProtocolApp = () => {
 
   const tabs = [
     { id: "dashboard", label: "Dashboard", icon: Activity },
-    { id: "nihss", label: "NIHSS", icon: Brain },
     { id: "checklist", label: "Checklist", icon: CheckSquare },
+    { id: "nihss", label: "NIHSS", icon: Brain },
     { id: "aspects", label: "ASPECTS", icon: Brain },
     { id: "thrombectomy", label: "Trombectomía", icon: Activity },
     { id: "rtpa", label: "rtPA", icon: canAccessTab("rtpa") ? Calculator : Lock },
@@ -1775,8 +1775,8 @@ const StrokeProtocolApp = () => {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
         {activeTab === "dashboard" && renderDashboard()}
-        {activeTab === "nihss" && renderNIHSS()}
         {activeTab === "checklist" && renderChecklist()}
+        {activeTab === "nihss" && renderNIHSS()}
         {activeTab === "aspects" && renderAspects()}
         {activeTab === "thrombectomy" && renderThrombectomy()}
         {activeTab === "rtpa" && renderRtPA()}
