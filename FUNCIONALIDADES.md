@@ -31,4 +31,4 @@
 **Leyenda de Prioridad:**
 - Alta: cambios urgentes o que mejoran mucho la experiencia.
 - Media: mejoras importantes pero no críticas.
-- Baja: mejoras menores o estéticas. 
+- Baja: mejoras menores o estéticas.
