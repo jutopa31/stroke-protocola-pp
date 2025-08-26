@@ -13,6 +13,7 @@ import {
   Syringe,
   Lock,
 } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "./components/ui/dialog"
 
 const StrokeProtocolApp = () => {
   const [activeTab, setActiveTab] = useState("dashboard")
@@ -53,6 +54,30 @@ const StrokeProtocolApp = () => {
     bloodPressure: "",
     glucose: "",
     symptomOnset: "",
+    lastKnownWell: "",
+    wakeUpStroke: false,
+  })
+
+  // Estado para protocolos de medicación
+  const [medicationProtocol, setMedicationProtocol] = useState({
+    labetalolDoses: [] as any[],
+    bpTarget: "140/90",
+    contraindications: {
+      asthma: false,
+      heartBlock: false,
+      heartFailure: false,
+    },
+  })
+
+  // Estado para seguimiento de imágenes
+  const [imagingData, setImagingData] = useState({
+    tcCerebralCompleted: false,
+    tcCerebralTime: "",
+    angioTCCompleted: false,
+    angioTCTime: "",
+    vesselOcclusion: "",
+    flairRequired: false,
+    flairCompleted: false,
   })
 
   const [checklist, setChecklist] = useState({
@@ -80,15 +105,23 @@ const StrokeProtocolApp = () => {
     m6: true,
   })
 
-  const [savedCases, setSavedCases] = useState([])
-  const [currentCaseId, setCurrentCaseId] = useState(null)
+  const [savedCases, setSavedCases] = useState<any[]>([])
+  const [currentCaseId, setCurrentCaseId] = useState<number | null>(null)
 
   const [emailConfig, setEmailConfig] = useState({
     neurologo: "",
     emergencias: "",
     hemodinamia: "",
     administracion: "",
+    strokeTeam: "",
+    radiologia: "",
+    farmacia: "",
+    jefaturaMedica: "",
   })
+
+  // Estado para los modales de escalas
+  const [openNIHSSModal, setOpenNIHSSModal] = useState(false)
+  const [openASPECTSModal, setOpenASPECTSModal] = useState(false)
 
   // Efecto para actualizar el progreso del protocolo
   useEffect(() => {
@@ -112,18 +145,20 @@ const StrokeProtocolApp = () => {
   }, [nihssScores, checklist, aspectsRegions, patientData])
 
   useEffect(() => {
-    let interval = null
+    let interval: NodeJS.Timeout | null = null
     if (isTimerRunning && arrivalTime) {
       interval = setInterval(() => {
         const now = new Date()
         const arrival = new Date(arrivalTime)
-        setElapsedTime(Math.floor((now - arrival) / 1000))
+        setElapsedTime(Math.floor((now.getTime() - arrival.getTime()) / 1000))
       }, 1000)
     }
-    return () => clearInterval(interval)
+    return () => {
+      if (interval) clearInterval(interval)
+    }
   }, [isTimerRunning, arrivalTime])
 
-  const formatTime = (seconds) => {
+  const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
@@ -150,6 +185,87 @@ const StrokeProtocolApp = () => {
 
   const calculateAspects = () => {
     return Object.values(aspectsRegions).filter(Boolean).length
+  }
+
+  // Función para calcular ventana temporal según protocolo HCP
+  const calculateTimeWindow = () => {
+    if (!patientData.symptomOnset && !patientData.lastKnownWell) return null
+    
+    const referenceTime = patientData.wakeUpStroke ? patientData.lastKnownWell : patientData.symptomOnset
+    if (!referenceTime) return null
+    
+    const now = new Date()
+    const onsetTime = new Date(referenceTime)
+    const hoursFromOnset = (now.getTime() - onsetTime.getTime()) / (1000 * 60 * 60)
+    
+    if (hoursFromOnset <= 3) return "0-3h"
+    if (hoursFromOnset <= 4.5) return "3-4.5h"
+    if (hoursFromOnset <= 24) return "4.5-24h"
+    return ">24h"
+  }
+
+  // Calculadora de Labetalol según protocolo HCP
+  const calculateLabetalolDose = (currentBP: string) => {
+    const systolic = parseInt(currentBP.split('/')[0]) || 0
+    const weight = parseFloat(patientData.weight) || 70
+    
+    // Protocolo HCP específico
+    if (systolic > 185) {
+      return {
+        bolusRecommended: true,
+        bolusDose: "10 mg IV en 1-2 min",
+        canRepeat: true,
+        maxBolus: "300 mg total",
+        infusionDose: "10 mg IV seguido de 2-8 mg/min",
+        targetBP: "≤185/110 mmHg",
+        contraindicated: medicationProtocol.contraindications.asthma || 
+                        medicationProtocol.contraindications.heartBlock || 
+                        medicationProtocol.contraindications.heartFailure
+      }
+    }
+    
+    return { bolusRecommended: false, targetBP: "Mantener <185/110 mmHg" }
+  }
+
+  // Determinar protocolo según ventana temporal
+  const getProtocolPathway = () => {
+    const timeWindow = calculateTimeWindow()
+    const nihssScore = calculateNihssTotal()
+    
+    switch (timeWindow) {
+      case "0-3h":
+        return {
+          pathway: "Ventana Estándar",
+          thrombolysisEligible: true,
+          imagingRequired: ["TC Cerebral"],
+          urgentThrombolysis: true,
+          color: "green"
+        }
+      case "3-4.5h":
+        return {
+          pathway: "Ventana Extendida", 
+          thrombolysisEligible: true,
+          imagingRequired: ["TC Cerebral", "Evaluación criterios extendidos"],
+          urgentThrombolysis: true,
+          color: "orange"
+        }
+      case "4.5-24h":
+        return {
+          pathway: "Ventana Tardía",
+          thrombolysisEligible: false,
+          imagingRequired: ["TC Cerebral", "Angio TC", "Perfusión"],
+          thrombectomyFocus: true,
+          color: "blue"
+        }
+      default:
+        return {
+          pathway: "Fuera de Ventana",
+          thrombolysisEligible: false,
+          imagingRequired: ["TC Cerebral"],
+          supportiveCare: true,
+          color: "gray"
+        }
+    }
   }
 
   // Funciones de validación mejoradas
@@ -253,7 +369,7 @@ const StrokeProtocolApp = () => {
   }
 
   // Función para verificar si se puede acceder a una pestaña
-  const canAccessTab = (tabId) => {
+  const canAccessTab = (tabId: string) => {
     switch (tabId) {
       case "rtpa":
         return getTrombolisisEligibility().eligible
@@ -266,35 +382,117 @@ const StrokeProtocolApp = () => {
     }
   }
 
-  const showEmailNotification = (type) => {
+  const showEmailNotification = (type: string, urgencyLevel: string = "normal") => {
     const notification = document.createElement("div")
-    notification.className = "fixed top-4 right-4 bg-green-500 text-white p-4 rounded-lg shadow-lg z-50"
+    
+    const urgencyColors: {[key: string]: string} = {
+      critical: "bg-red-600",
+      urgent: "bg-orange-500", 
+      high: "bg-yellow-500",
+      normal: "bg-green-500"
+    }
+    
+    const urgencyIcons: {[key: string]: string} = {
+      critical: "🚨",
+      urgent: "⚡", 
+      high: "⚠️",
+      normal: "📧"
+    }
+    
+    notification.className = `fixed top-4 right-4 ${urgencyColors[urgencyLevel]} text-white p-4 rounded-lg shadow-lg z-50 animate-pulse`
     notification.innerHTML = `
       <div class="flex items-center">
-        <span class="mr-2">📧</span>
-        ${type === "codigo_activado" ? "Notificación enviada al equipo" : "Resumen del caso enviado"}
+        <span class="mr-2 text-xl">${urgencyIcons[urgencyLevel]}</span>
+        <div>
+          <div class="font-bold">${urgencyLevel.toUpperCase()}</div>
+          <div class="text-sm">
+            ${type === "codigo_activado" ? "Equipo stroke activado" : 
+              type === "trombolisis_urgente" ? "Trombolisis CRÍTICA" :
+              type === "trombectomia_candidato" ? "Hemodinamia contactada" :
+              type === "labetalol_requerido" ? "Medicación solicitada" :
+              type === "imaging_urgente" ? "Radiología contactada" :
+              "Notificación enviada"}
+          </div>
+        </div>
       </div>
     `
 
     document.body.appendChild(notification)
 
+    const duration = urgencyLevel === "critical" ? 5000 : urgencyLevel === "urgent" ? 4000 : 3000
     setTimeout(() => {
       if (document.body.contains(notification)) {
         document.body.removeChild(notification)
       }
-    }, 3000)
+    }, duration)
   }
 
-  const sendEmailNotification = (type, data) => {
-    const emailData = {
-      type: type,
-      timestamp: new Date().toLocaleString(),
-      data: data,
-      recipients: emailConfig,
+  const sendEmailNotification = (type: string, data: any) => {
+    let recipients = []
+    let urgencyLevel = "normal"
+    let message = ""
+
+    // Determinar destinatarios según protocolo HCP
+    switch (type) {
+      case "codigo_activado":
+        recipients = [emailConfig.emergencias, emailConfig.neurologo, emailConfig.strokeTeam, emailConfig.radiologia]
+        urgencyLevel = "urgent"
+        message = "Código ACV activado - Todos los equipos mobilizados"
+        break
+
+      case "trombolisis_urgente":
+        recipients = [emailConfig.neurologo, emailConfig.emergencias, emailConfig.farmacia, emailConfig.strokeTeam]
+        urgencyLevel = "critical"
+        message = `Trombolisis URGENTE - Ventana ${calculateTimeWindow()}`
+        break
+
+      case "trombectomia_candidato":
+        recipients = [emailConfig.hemodinamia, emailConfig.neurologo, emailConfig.strokeTeam, emailConfig.radiologia]
+        urgencyLevel = "critical"
+        message = "Candidato a trombectomía - Contactar hemodinamia INMEDIATAMENTE"
+        break
+
+      case "labetalol_requerido":
+        recipients = [emailConfig.emergencias, emailConfig.neurologo, emailConfig.farmacia]
+        urgencyLevel = "high"
+        message = `Hipertensión >185/110 - Labetalol requerido antes de trombolisis`
+        break
+
+      case "imaging_urgente":
+        recipients = [emailConfig.radiologia, emailConfig.neurologo, emailConfig.strokeTeam]
+        urgencyLevel = "urgent"
+        message = `Imágenes urgentes requeridas - Ventana ${calculateTimeWindow()}`
+        break
+
+      case "resumen_caso":
+        recipients = Object.values(emailConfig).filter(Boolean)
+        urgencyLevel = "normal"
+        message = "Resumen completo del caso ACV"
+        break
+
+      default:
+        recipients = [emailConfig.emergencias, emailConfig.neurologo]
+        message = "Notificación del protocolo ACV"
     }
 
-    console.log("📧 Email enviado:", emailData)
-    showEmailNotification(type)
+    const emailData = {
+      type: type,
+      urgency: urgencyLevel,
+      timestamp: new Date().toLocaleString(),
+      message: message,
+      data: data,
+      recipients: recipients.filter(Boolean),
+      protocolInfo: {
+        timeWindow: calculateTimeWindow(),
+        nihssScore: calculateNihssTotal(),
+        pathway: getProtocolPathway().pathway,
+        eligibleThrombolysis: getTrombolisisEligibility().eligible,
+        eligibleThrombectomy: getThrombectomyEligibility().eligible
+      }
+    }
+
+    console.log(`📧 Email ${urgencyLevel.toUpperCase()} enviado:`, emailData)
+    showEmailNotification(type, urgencyLevel)
   }
 
   const startCodeStroke = () => {
@@ -584,45 +782,199 @@ const StrokeProtocolApp = () => {
         <div className="bg-white p-6 rounded-lg shadow border">
           <h3 className="text-lg font-semibold mb-4 flex items-center">
             <User className="h-5 w-5 mr-2" />
-            Datos del Paciente
+            Datos del Paciente y Tiempos
           </h3>
-          <div className="space-y-3">
-            <div>
-              <label className="block text-sm font-medium mb-1">Edad *</label>
-              <input
-                type="number"
-                value={patientData.age}
-                onChange={(e) => setPatientData({ ...patientData, age: e.target.value })}
-                className="w-full p-2 border rounded"
-                placeholder="Años"
-              />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Edad *</label>
+                <input
+                  type="number"
+                  value={patientData.age}
+                  onChange={(e) => setPatientData({ ...patientData, age: e.target.value })}
+                  className="w-full p-2 border rounded"
+                  placeholder="Años"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Peso (kg) *</label>
+                <input
+                  type="number"
+                  value={patientData.weight}
+                  onChange={(e) => setPatientData({ ...patientData, weight: e.target.value })}
+                  className="w-full p-2 border rounded"
+                  placeholder="Peso en kg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Presión Arterial</label>
+                <input
+                  type="text"
+                  value={patientData.bloodPressure}
+                  onChange={(e) => setPatientData({ ...patientData, bloodPressure: e.target.value })}
+                  placeholder="185/110"
+                  className="w-full p-2 border rounded"
+                />
+                {patientData.bloodPressure && parseInt(patientData.bloodPressure.split('/')[0]) > 185 && (
+                  <p className="text-xs text-red-600 mt-1">⚠️ TA &gt;185/110 - Considerar Labetalol</p>
+                )}
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Peso (kg) *</label>
-              <input
-                type="number"
-                value={patientData.weight}
-                onChange={(e) => setPatientData({ ...patientData, weight: e.target.value })}
-                className="w-full p-2 border rounded"
-                placeholder="Peso en kg"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Presión Arterial</label>
-              <input
-                type="text"
-                value={patientData.bloodPressure}
-                onChange={(e) => setPatientData({ ...patientData, bloodPressure: e.target.value })}
-                placeholder="120/80"
-                className="w-full p-2 border rounded"
-              />
+            
+            <div className="space-y-3">
+              <div>
+                <label className="flex items-center space-x-2 mb-2">
+                  <input
+                    type="checkbox"
+                    checked={patientData.wakeUpStroke}
+                    onChange={(e) => setPatientData({ ...patientData, wakeUpStroke: e.target.checked })}
+                    className="rounded"
+                  />
+                  <span className="text-sm font-medium">Wake-up Stroke</span>
+                </label>
+              </div>
+              
+              {!patientData.wakeUpStroke ? (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Inicio de Síntomas *</label>
+                  <input
+                    type="datetime-local"
+                    value={patientData.symptomOnset}
+                    onChange={(e) => setPatientData({ ...patientData, symptomOnset: e.target.value })}
+                    className="w-full p-2 border rounded"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Última vez visto normal *</label>
+                  <input
+                    type="datetime-local"
+                    value={patientData.lastKnownWell}
+                    onChange={(e) => setPatientData({ ...patientData, lastKnownWell: e.target.value })}
+                    className="w-full p-2 border rounded"
+                  />
+                  <p className="text-xs text-blue-600 mt-1">💡 Puede requerir FLAIR/DWI-FLAIR mismatch</p>
+                </div>
+              )}
+              
+              {(patientData.symptomOnset || patientData.lastKnownWell) && (
+                <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Ventana Temporal:</span>
+                    <span className={`text-sm font-bold ${
+                      getProtocolPathway().color === 'green' ? 'text-green-700' :
+                      getProtocolPathway().color === 'orange' ? 'text-orange-700' :
+                      getProtocolPathway().color === 'blue' ? 'text-blue-700' : 'text-gray-700'
+                    }`}>
+                      {calculateTimeWindow() || "Sin definir"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">{getProtocolPathway().pathway}</p>
+                </div>
+              )}
             </div>
           </div>
           <p className="text-xs text-gray-500 mt-2">* Campos requeridos para finalizar caso</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Protocolo de Ventana Temporal */}
+      {(patientData.symptomOnset || patientData.lastKnownWell) && (
+        <div className="bg-white p-6 rounded-lg shadow border">
+          <h3 className="text-lg font-semibold mb-4 flex items-center">
+            <Clock className="h-5 w-5 mr-2" />
+            Protocolo según Ventana Temporal - HCP
+          </h3>
+          <div className={`p-4 rounded-lg border-2 ${
+            getProtocolPathway().color === 'green' ? 'bg-green-50 border-green-300' :
+            getProtocolPathway().color === 'orange' ? 'bg-orange-50 border-orange-300' :
+            getProtocolPathway().color === 'blue' ? 'bg-blue-50 border-blue-300' : 'bg-gray-50 border-gray-300'
+          }`}>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-xl font-bold">{getProtocolPathway().pathway}</h4>
+              <span className="text-lg font-bold">{calculateTimeWindow()}</span>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <h5 className="font-semibold text-sm mb-2">Imágenes Requeridas:</h5>
+                <ul className="text-sm space-y-1">
+                  {getProtocolPathway().imagingRequired.map((imaging, index) => (
+                    <li key={index} className="flex items-center">
+                      <span className="mr-2">📋</span>
+                      {imaging}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              
+              <div>
+                <h5 className="font-semibold text-sm mb-2">Acciones Recomendadas:</h5>
+                <div className="space-y-2">
+                  {getProtocolPathway().urgentThrombolysis && (
+                    <button
+                      onClick={() => sendEmailNotification("trombolisis_urgente", { 
+                        timeWindow: calculateTimeWindow(),
+                        nihssScore: calculateNihssTotal(),
+                        urgentMessage: "TROMBOLISIS INMEDIATA REQUERIDA" 
+                      })}
+                      className="w-full bg-red-600 text-white py-2 px-3 rounded text-sm hover:bg-red-700 font-semibold"
+                    >
+                      🚨 Notificar Trombolisis URGENTE
+                    </button>
+                  )}
+                  
+                  {getProtocolPathway().thrombectomyFocus && getThrombectomyEligibility().eligible && (
+                    <button
+                      onClick={() => sendEmailNotification("trombectomia_candidato", {
+                        aspectsScore: calculateAspects(),
+                        nihssScore: calculateNihssTotal(),
+                        timeWindow: calculateTimeWindow()
+                      })}
+                      className="w-full bg-blue-600 text-white py-2 px-3 rounded text-sm hover:bg-blue-700 font-semibold"
+                    >
+                      🔄 Contactar Hemodinamia
+                    </button>
+                  )}
+
+                  {patientData.bloodPressure && parseInt(patientData.bloodPressure.split('/')[0]) > 185 && (
+                    <button
+                      onClick={() => sendEmailNotification("labetalol_requerido", {
+                        currentBP: patientData.bloodPressure,
+                        labetalolProtocol: calculateLabetalolDose(patientData.bloodPressure)
+                      })}
+                      className="w-full bg-yellow-600 text-white py-2 px-3 rounded text-sm hover:bg-yellow-700 font-semibold"
+                    >
+                      ⚠️ Solicitar Labetalol
+                    </button>
+                  )}
+
+                  {getProtocolPathway().imagingRequired.length > 1 && (
+                    <button
+                      onClick={() => sendEmailNotification("imaging_urgente", {
+                        imagingRequired: getProtocolPathway().imagingRequired,
+                        timeWindow: calculateTimeWindow(),
+                        wakeUpStroke: patientData.wakeUpStroke
+                      })}
+                      className="w-full bg-purple-600 text-white py-2 px-3 rounded text-sm hover:bg-purple-700 font-semibold"
+                    >
+                      📋 Solicitar Imágenes
+                    </button>
+                  )}
+
+                  {getProtocolPathway().supportiveCare && (
+                    <div className="text-sm text-gray-700 bg-gray-100 p-2 rounded">
+                      🏥 Cuidados de soporte - No requiere notificaciones urgentes
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
           <div className="flex items-center justify-between">
             <div>
@@ -654,6 +1006,22 @@ const StrokeProtocolApp = () => {
               </p>
             </div>
             <Activity className="h-8 w-8 text-purple-500" />
+          </div>
+        </div>
+
+        <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-red-600 font-medium">Labetalol</p>
+              <p className="text-sm font-bold text-red-800">
+                {patientData.bloodPressure && parseInt(patientData.bloodPressure.split('/')[0]) > 185 
+                  ? "Recomendado" : "No indicado"}
+              </p>
+              {patientData.bloodPressure && parseInt(patientData.bloodPressure.split('/')[0]) > 185 && (
+                <p className="text-xs text-red-600">10mg IV bolo</p>
+              )}
+            </div>
+            <Syringe className="h-8 w-8 text-red-500" />
           </div>
         </div>
       </div>
@@ -765,181 +1133,206 @@ const StrokeProtocolApp = () => {
           Criterios de Inclusión/Exclusión para Trombolisis
         </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="border border-green-200 rounded-lg p-4">
-            <h3 className="text-lg font-semibold text-green-700 mb-4">Criterios de Inclusión</h3>
-            <div className="space-y-3">
-              <label className="flex items-start">
-                <input
-                  type="checkbox"
-                  checked={checklist.inclusionCriteria.timeWindow}
-                  onChange={(e) =>
-                    setChecklist({
-                      ...checklist,
-                      inclusionCriteria: {
-                        ...checklist.inclusionCriteria,
-                        timeWindow: e.target.checked,
-                      },
-                    })
-                  }
-                  className="mr-2 mt-1"
-                />
-                <div>
-                  <span>Ventana temporal ≤4.5 horas</span>
-                  <div className="text-xs text-gray-600 mt-1">Desde inicio de síntomas hasta llegada a hospital</div>
-                </div>
-              </label>
-
-              <label className="flex items-start">
-                <input
-                  type="checkbox"
-                  checked={checklist.inclusionCriteria.nihssOver5}
-                  onChange={(e) =>
-                    setChecklist({
-                      ...checklist,
-                      inclusionCriteria: {
-                        ...checklist.inclusionCriteria,
-                        nihssOver5: e.target.checked,
-                      },
-                    })
-                  }
-                  className="mr-2 mt-1"
-                />
-                <div>
-                  <span>NIHSS ≥5 puntos</span>
-                  <div className="text-xs text-gray-600 mt-1">Actual: {calculateNihssTotal()} puntos</div>
-                </div>
-              </label>
-
-              <label className="flex items-start">
-                <input
-                  type="checkbox"
-                  checked={checklist.inclusionCriteria.disablingSymptoms}
-                  onChange={(e) =>
-                    setChecklist({
-                      ...checklist,
-                      inclusionCriteria: {
-                        ...checklist.inclusionCriteria,
-                        disablingSymptoms: e.target.checked,
-                      },
-                    })
-                  }
-                  className="mr-2 mt-1"
-                />
-                <div>
-                  <span>Síntomas discapacitantes</span>
-                  <div className="text-xs text-gray-600 mt-1 p-2 bg-gray-50 rounded">
-                    <strong>Ejemplos de síntomas discapacitantes:</strong>
-                    <ul className="list-disc list-inside mt-1 space-y-1">
-                      <li>Afasia (alteración del lenguaje)</li>
-                      <li>Hemiplejia/hemiparesia (debilidad de un lado)</li>
-                      <li>Hemianopsia (pérdida de campo visual)</li>
-                      <li>Ataxia incapacitante (pérdida de coordinación)</li>
-                      <li>Alteración del nivel de conciencia</li>
-                      <li>Cualquier déficit que interfiera con actividades diarias</li>
-                    </ul>
-                    <p className="mt-2 text-yellow-700">
-                      <strong>Nota:</strong> Para NIHSS {"<"}5, este criterio es obligatorio
-                    </p>
-                  </div>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          <div className="border border-red-200 rounded-lg p-4">
-            <h3 className="text-lg font-semibold text-red-700 mb-4">Criterios de Exclusión</h3>
-            <div className="space-y-3">
-              <label className="flex items-start">
-                <input
-                  type="checkbox"
-                  checked={checklist.exclusionCriteria.bleeding}
-                  onChange={(e) =>
-                    setChecklist({
-                      ...checklist,
-                      exclusionCriteria: {
-                        ...checklist.exclusionCriteria,
-                        bleeding: e.target.checked,
-                      },
-                    })
-                  }
-                  className="mr-2 mt-1"
-                />
-                <div>
-                  <span>Sangrado activo o reciente</span>
-                  <div className="text-xs text-gray-600 mt-1">Hemorragia intracraneal, GI activa, cirugía reciente</div>
-                </div>
-              </label>
-
-              <label className="flex items-start">
-                <input
-                  type="checkbox"
-                  checked={checklist.exclusionCriteria.hypertension}
-                  onChange={(e) =>
-                    setChecklist({
-                      ...checklist,
-                      exclusionCriteria: {
-                        ...checklist.exclusionCriteria,
-                        hypertension: e.target.checked,
-                      },
-                    })
-                  }
-                  className="mr-2 mt-1"
-                />
-                <div>
-                  <span>TA {">"} 185/110 mmHg refractaria</span>
-                  <div className="text-xs text-gray-600 mt-1">
-                    Actual: {patientData.bloodPressure || "No registrada"}
-                  </div>
-                </div>
-              </label>
-
-              <label className="flex items-start">
-                <input
-                  type="checkbox"
-                  checked={checklist.exclusionCriteria.anticoagulation}
-                  onChange={(e) =>
-                    setChecklist({
-                      ...checklist,
-                      exclusionCriteria: {
-                        ...checklist.exclusionCriteria,
-                        anticoagulation: e.target.checked,
-                      },
-                    })
-                  }
-                  className="mr-2 mt-1"
-                />
-                <div>
-                  <span>Anticoagulación reciente</span>
-                  <div className="text-xs text-gray-600 mt-1">
-                    INR {">"}1.7, heparina {"<"}48h, DOAC {"<"}48h
-                  </div>
-                </div>
-              </label>
-
-              <label className="flex items-start">
-                <input
-                  type="checkbox"
-                  checked={checklist.exclusionCriteria.giBleeding}
-                  onChange={(e) =>
-                    setChecklist({
-                      ...checklist,
-                      exclusionCriteria: {
-                        ...checklist.exclusionCriteria,
-                        giBleeding: e.target.checked,
-                      },
-                    })
-                  }
-                  className="mr-2 mt-1"
-                />
-                <div>
-                  <span>Sangrado GI {"<"}21 días</span>
-                  <div className="text-xs text-gray-600 mt-1">Hemorragia gastrointestinal reciente</div>
-                </div>
-              </label>
-            </div>
-          </div>
+        {/* Botones para abrir los modales de escalas */}
+        <div className="flex gap-4 mb-6">
+          <button
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            onClick={() => setOpenNIHSSModal(true)}
+          >
+            Calcular NIHSS
+          </button>
+          <button
+            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+            onClick={() => setOpenASPECTSModal(true)}
+          >
+            Calcular ASPECTS
+          </button>
         </div>
+
+        {/* Modales de escalas */}
+        <Dialog open={openNIHSSModal} onOpenChange={setOpenNIHSSModal}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Escala NIHSS</DialogTitle>
+            </DialogHeader>
+            {/* Contenido de renderNIHSS adaptado para modal */}
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  {nihssQuestions.map((question) => (
+                    <div key={question.key} className="border-b pb-4">
+                      <label className="block text-sm font-medium mb-2">{question.label}</label>
+                      <select
+                        value={nihssScores[question.key]}
+                        onChange={(e) =>
+                          setNihssScores({
+                            ...nihssScores,
+                            [question.key]: Number.parseInt(e.target.value),
+                          })
+                        }
+                        className="w-full p-2 border rounded"
+                      >
+                        {question.options.map((option, optIndex) => (
+                          <option key={optIndex} value={optIndex}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+                <div className="bg-blue-50 p-6 rounded-lg">
+                  <h3 className="text-lg font-semibold mb-4">Resumen NIHSS</h3>
+                  <div className="text-4xl font-bold text-blue-600 mb-4">{calculateNihssTotal()}</div>
+                  <div className="space-y-2 text-sm">
+                    <div
+                      className={`p-2 rounded ${calculateNihssTotal() >= 5 ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}
+                    >
+                      {calculateNihssTotal() >= 5
+                        ? "Criterio NIHSS ≥5 cumplido"
+                        : "NIHSS <5 - Evaluar síntomas discapacitantes"}
+                    </div>
+                    {calculateNihssTotal() >= 15 && (
+                      <div className="p-2 bg-orange-100 text-orange-800 rounded">⚠️ NIHSS alto - Considerar trombectomía</div>
+                    )}
+                    {calculateNihssTotal() >= 6 && (
+                      <div className="p-2 bg-purple-100 text-purple-800 rounded">
+                        🔄 NIHSS ≥6 - Candidato potencial para trombectomía
+                      </div>
+                    )}
+                  </div>
+                  <DialogClose asChild>
+                    <button className="mt-4 w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700">
+                      Cerrar
+                    </button>
+                  </DialogClose>
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={openASPECTSModal} onOpenChange={setOpenASPECTSModal}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Escala ASPECTS</DialogTitle>
+            </DialogHeader>
+            {/* Contenido de renderAspects adaptado para modal */}
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="bg-gray-50 p-6 rounded-lg">
+                  <h3 className="text-lg font-semibold mb-4">Territorio ACM - Regiones ASPECTS</h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Marque las regiones que están <strong>normales</strong> (sin isquemia). Desmarque las que tienen cambios isquémicos tempranos.
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <h4 className="font-medium text-sm text-gray-700">Ganglios Basales</h4>
+                      {[
+                        { key: "caudate", label: "Núcleo Caudado" },
+                        { key: "putamen", label: "Putamen" },
+                        { key: "internalCapsule", label: "Cápsula Interna" },
+                      ].map((region) => (
+                        <label key={region.key} className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={aspectsRegions[region.key]}
+                            onChange={(e) =>
+                              setAspectsRegions({
+                                ...aspectsRegions,
+                                [region.key]: e.target.checked,
+                              })
+                            }
+                            className="rounded"
+                          />
+                          <span className="text-sm">{region.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="space-y-2">
+                      <h4 className="font-medium text-sm text-gray-700">Corteza</h4>
+                      {[
+                        { key: "insular", label: "Ínsula (I)" },
+                        { key: "m1", label: "M1 (frontal)" },
+                        { key: "m2", label: "M2 (frontoparietal)" },
+                        { key: "m3", label: "M3 (temporal anterior)" },
+                        { key: "m4", label: "M4 (temporal medio)" },
+                        { key: "m5", label: "M5 (temporal posterior)" },
+                        { key: "m6", label: "M6 (parietal inferior)" },
+                      ].map((region) => (
+                        <label key={region.key} className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={aspectsRegions[region.key]}
+                            onChange={(e) =>
+                              setAspectsRegions({
+                                ...aspectsRegions,
+                                [region.key]: e.target.checked,
+                              })
+                            }
+                            className="rounded"
+                          />
+                          <span className="text-sm">{region.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div className="bg-blue-50 p-6 rounded-lg">
+                    <h3 className="text-lg font-semibold mb-2">Score ASPECTS</h3>
+                    <div className="text-4xl font-bold text-blue-600 mb-4">{calculateAspects()}/10</div>
+                    <div className="space-y-2">
+                      <div
+                        className={`p-3 rounded ${calculateAspects() >= 6 ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}
+                      >
+                        {calculateAspects() >= 6
+                          ? "✅ ASPECTS ≥6 - Elegible para trombectomía"
+                          : "❌ ASPECTS <6 - Alto riesgo de sangrado"}
+                      </div>
+                      {calculateAspects() >= 8 && (
+                        <div className="p-3 bg-green-200 text-green-900 rounded">
+                          🌟 ASPECTS excelente (≥8) - Muy buen pronóstico
+                        </div>
+                      )}
+                      {calculateAspects() < 6 && (
+                        <div className="p-3 bg-orange-100 text-orange-800 rounded text-sm">
+                          <strong>⚠️ Consideraciones:</strong>
+                          <ul className="list-disc list-inside mt-1">
+                            <li>Alto riesgo de transformación hemorrágica</li>
+                            <li>Evaluar beneficio vs riesgo individualmente</li>
+                            <li>Considerar consulta con neurólogo vascular</li>
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h4 className="font-semibold text-gray-800 mb-2">Interpretación ASPECTS</h4>
+                    <div className="text-sm text-gray-700 space-y-1">
+                      <p>
+                        <strong>10 puntos:</strong> Sin cambios isquémicos
+                      </p>
+                      <p>
+                        <strong>8-9 puntos:</strong> Cambios mínimos, excelente pronóstico
+                      </p>
+                      <p>
+                        <strong>6-7 puntos:</strong> Cambios moderados, buen candidato
+                      </p>
+                      <p>
+                        <strong>{"<"}6 puntos:</strong> Cambios extensos, alto riesgo
+                      </p>
+                    </div>
+                  </div>
+                  <DialogClose asChild>
+                    <button className="mt-4 w-full bg-green-600 text-white p-2 rounded hover:bg-green-700">
+                      Cerrar
+                    </button>
+                  </DialogClose>
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <div className="mt-6 p-4 rounded-lg border">
           {(() => {
@@ -1632,71 +2025,125 @@ const StrokeProtocolApp = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-800">Equipo Principal</h3>
+            
             <div>
-              <label className="block text-sm font-medium mb-2">Email Neurólogo de Guardia</label>
+              <label className="block text-sm font-medium mb-2">🧠 Neurólogo de Guardia</label>
               <input
                 type="email"
                 value={emailConfig.neurologo}
                 onChange={(e) => setEmailConfig({ ...emailConfig, neurologo: e.target.value })}
-                placeholder="neurologo@hospital.com"
+                placeholder="neurologo@hcp.com.ar"
                 className="w-full p-3 border rounded-lg"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Email Emergencias</label>
+              <label className="block text-sm font-medium mb-2">🚨 Emergencias</label>
               <input
                 type="email"
                 value={emailConfig.emergencias}
                 onChange={(e) => setEmailConfig({ ...emailConfig, emergencias: e.target.value })}
-                placeholder="emergencias@hospital.com"
+                placeholder="emergencias@hcp.com.ar"
                 className="w-full p-3 border rounded-lg"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Email Hemodinamia</label>
+              <label className="block text-sm font-medium mb-2">🫀 Hemodinamia</label>
               <input
                 type="email"
                 value={emailConfig.hemodinamia}
                 onChange={(e) => setEmailConfig({ ...emailConfig, hemodinamia: e.target.value })}
-                placeholder="hemodinamia@hospital.com"
+                placeholder="hemodinamia@hcp.com.ar"
                 className="w-full p-3 border rounded-lg"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Email Administración</label>
+              <label className="block text-sm font-medium mb-2">🧪 Stroke Team</label>
               <input
                 type="email"
-                value={emailConfig.administracion}
-                onChange={(e) => setEmailConfig({ ...emailConfig, administracion: e.target.value })}
-                placeholder="admin@hospital.com"
+                value={emailConfig.strokeTeam}
+                onChange={(e) => setEmailConfig({ ...emailConfig, strokeTeam: e.target.value })}
+                placeholder="stroketeam@hcp.com.ar"
                 className="w-full p-3 border rounded-lg"
               />
             </div>
           </div>
 
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-800">Servicios de Apoyo</h3>
+            
+            <div>
+              <label className="block text-sm font-medium mb-2">📡 Radiología</label>
+              <input
+                type="email"
+                value={emailConfig.radiologia}
+                onChange={(e) => setEmailConfig({ ...emailConfig, radiologia: e.target.value })}
+                placeholder="radiologia@hcp.com.ar"
+                className="w-full p-3 border rounded-lg"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">💊 Farmacia</label>
+              <input
+                type="email"
+                value={emailConfig.farmacia}
+                onChange={(e) => setEmailConfig({ ...emailConfig, farmacia: e.target.value })}
+                placeholder="farmacia@hcp.com.ar"
+                className="w-full p-3 border rounded-lg"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">👔 Jefatura Médica</label>
+              <input
+                type="email"
+                value={emailConfig.jefaturaMedica}
+                onChange={(e) => setEmailConfig({ ...emailConfig, jefaturaMedica: e.target.value })}
+                placeholder="jefatura@hcp.com.ar"
+                className="w-full p-3 border rounded-lg"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">📋 Administración</label>
+              <input
+                type="email"
+                value={emailConfig.administracion}
+                onChange={(e) => setEmailConfig({ ...emailConfig, administracion: e.target.value })}
+                placeholder="admin@hcp.com.ar"
+                className="w-full p-3 border rounded-lg"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-blue-50 p-6 rounded-lg">
-            <h3 className="text-lg font-semibold mb-4 text-blue-800">Tipos de Notificaciones</h3>
+            <h3 className="text-lg font-semibold mb-4 text-blue-800">Notificaciones por Urgencia</h3>
 
-            <div className="space-y-4 text-sm">
-              <div className="bg-white p-3 rounded border">
-                <h4 className="font-semibold text-blue-700">📧 Activación de Código</h4>
-                <p className="text-gray-600 mt-1">Se envía inmediatamente al activar el código ACV</p>
-                <p className="text-xs text-gray-500">→ Todos los contactos</p>
+            <div className="space-y-3 text-sm">
+              <div className="bg-red-50 border-l-4 border-red-500 p-3 rounded">
+                <h4 className="font-semibold text-red-700">🚨 CRÍTICO - Trombolisis/Trombectomía</h4>
+                <p className="text-red-600 text-xs mt-1">→ Neurólogo, Hemodinamia, Stroke Team</p>
               </div>
 
-              <div className="bg-white p-3 rounded border">
-                <h4 className="font-semibold text-green-700">📋 Resumen del Caso</h4>
-                <p className="text-gray-600 mt-1">Se envía al guardar/finalizar el caso</p>
-                <p className="text-xs text-gray-500">→ Incluye NIHSS, ASPECTS, tratamientos</p>
+              <div className="bg-orange-50 border-l-4 border-orange-500 p-3 rounded">
+                <h4 className="font-semibold text-orange-700">⚡ URGENTE - Imágenes/Código ACV</h4>
+                <p className="text-orange-600 text-xs mt-1">→ Radiología, Emergencias, Stroke Team</p>
               </div>
 
-              <div className="bg-white p-3 rounded border">
-                <h4 className="font-semibold text-purple-700">🚨 Alertas Críticas</h4>
-                <p className="text-gray-600 mt-1">Para casos de trombectomía urgente</p>
-                <p className="text-xs text-gray-500">→ Hemodinamia + Neurólogo</p>
+              <div className="bg-yellow-50 border-l-4 border-yellow-500 p-3 rounded">
+                <h4 className="font-semibold text-yellow-700">⚠️ ALTO - Medicación</h4>
+                <p className="text-yellow-600 text-xs mt-1">→ Farmacia, Emergencias, Neurólogo</p>
+              </div>
+
+              <div className="bg-green-50 border-l-4 border-green-500 p-3 rounded">
+                <h4 className="font-semibold text-green-700">📧 NORMAL - Resúmenes</h4>
+                <p className="text-green-600 text-xs mt-1">→ Todos los contactos configurados</p>
               </div>
             </div>
 
@@ -1708,6 +2155,38 @@ const StrokeProtocolApp = () => {
             >
               Enviar Email de Prueba
             </button>
+          </div>
+
+          <div className="bg-green-50 p-6 rounded-lg">
+            <h3 className="text-lg font-semibold mb-4 text-green-800">Protocolo HCP - Flujo de Notificaciones</h3>
+            
+            <div className="space-y-3 text-sm">
+              <div className="bg-white p-3 rounded border-l-4 border-green-500">
+                <h4 className="font-semibold">1. Activación Código ACV</h4>
+                <p className="text-gray-600 text-xs">→ Emergencias, Neurólogo, Stroke Team, Radiología</p>
+              </div>
+
+              <div className="bg-white p-3 rounded border-l-4 border-orange-500">
+                <h4 className="font-semibold">2. Evaluación Ventana Temporal</h4>
+                <p className="text-gray-600 text-xs">→ 0-3h: Trombolisis urgente</p>
+                <p className="text-gray-600 text-xs">→ 3-4.5h: Trombolisis extendida</p>
+                <p className="text-gray-600 text-xs">→ 4.5-24h: Solo trombectomía</p>
+              </div>
+
+              <div className="bg-white p-3 rounded border-l-4 border-red-500">
+                <h4 className="font-semibold">3. Decisiones Críticas</h4>
+                <p className="text-gray-600 text-xs">→ rtPA: Farmacia + Neurólogo</p>
+                <p className="text-gray-600 text-xs">→ Trombectomía: Hemodinamia STAT</p>
+                <p className="text-gray-600 text-xs">→ Labetalol: Farmacia + Emergencias</p>
+              </div>
+
+              <div className="bg-white p-3 rounded border-l-4 border-blue-500">
+                <h4 className="font-semibold">4. Imágenes Urgentes</h4>
+                <p className="text-gray-600 text-xs">→ TC: Radiología</p>
+                <p className="text-gray-600 text-xs">→ Angio TC: Radiología + Stroke Team</p>
+                <p className="text-gray-600 text-xs">→ FLAIR: Radiología (Wake-up stroke)</p>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1722,6 +2201,167 @@ const StrokeProtocolApp = () => {
     </div>
   )
 
+  const renderLabetalol = () => {
+    const labetalolRecommendation = patientData.bloodPressure ? calculateLabetalolDose(patientData.bloodPressure) : null
+    
+    return (
+      <div className="space-y-6">
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h2 className="text-xl font-bold mb-4 flex items-center">
+            <Syringe className="h-6 w-6 mr-2" />
+            Protocolo Labetalol - Control de Hipertensión
+          </h2>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-blue-700 mb-3">Datos Actuales del Paciente</h3>
+                
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Presión Arterial Actual</label>
+                    <input
+                      type="text"
+                      value={patientData.bloodPressure}
+                      onChange={(e) => setPatientData({ ...patientData, bloodPressure: e.target.value })}
+                      placeholder="185/110"
+                      className="w-full p-3 border rounded-lg text-lg"
+                    />
+                    <p className="text-xs text-gray-600 mt-1">Formato: sistólica/diastólica (ej: 200/120)</p>
+                  </div>
+
+                  <div>
+                    <h4 className="font-medium text-sm mb-2">Contraindicaciones para Labetalol:</h4>
+                    <div className="space-y-2">
+                      <label className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          checked={medicationProtocol.contraindications.asthma}
+                          onChange={(e) => setMedicationProtocol({
+                            ...medicationProtocol,
+                            contraindications: { ...medicationProtocol.contraindications, asthma: e.target.checked }
+                          })}
+                          className="rounded"
+                        />
+                        <span className="text-sm">Asma o EPOC severo</span>
+                      </label>
+                      <label className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          checked={medicationProtocol.contraindications.heartBlock}
+                          onChange={(e) => setMedicationProtocol({
+                            ...medicationProtocol,
+                            contraindications: { ...medicationProtocol.contraindications, heartBlock: e.target.checked }
+                          })}
+                          className="rounded"
+                        />
+                        <span className="text-sm">Bloqueo AV de 2° o 3° grado</span>
+                      </label>
+                      <label className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          checked={medicationProtocol.contraindications.heartFailure}
+                          onChange={(e) => setMedicationProtocol({
+                            ...medicationProtocol,
+                            contraindications: { ...medicationProtocol.contraindications, heartFailure: e.target.checked }
+                          })}
+                          className="rounded"
+                        />
+                        <span className="text-sm">Insuficiencia cardíaca descompensada</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {labetalolRecommendation && (
+                <div className={`p-6 rounded-lg border-2 ${
+                  labetalolRecommendation.bolusRecommended && !labetalolRecommendation.contraindicated
+                    ? 'bg-green-50 border-green-300' 
+                    : labetalolRecommendation.contraindicated
+                    ? 'bg-red-50 border-red-300'
+                    : 'bg-gray-50 border-gray-300'
+                }`}>
+                  <h3 className="text-lg font-semibold mb-4">
+                    {labetalolRecommendation.bolusRecommended 
+                      ? (labetalolRecommendation.contraindicated ? "❌ CONTRAINDICADO" : "✅ LABETALOL INDICADO")
+                      : "ℹ️ Labetalol no necesario"}
+                  </h3>
+
+                  {labetalolRecommendation.bolusRecommended && !labetalolRecommendation.contraindicated && (
+                    <div className="space-y-3">
+                      <div className="bg-white p-3 rounded border">
+                        <h4 className="font-semibold text-green-700">Protocolo HCP:</h4>
+                        <ul className="text-sm mt-2 space-y-1">
+                          <li><strong>Dosis inicial:</strong> {labetalolRecommendation.bolusDose}</li>
+                          <li><strong>Repetir cada 10-20 min</strong> hasta máximo {labetalolRecommendation.maxBolus}</li>
+                          <li><strong>Alternativa:</strong> {labetalolRecommendation.infusionDose}</li>
+                          <li><strong>Objetivo:</strong> {labetalolRecommendation.targetBP}</li>
+                        </ul>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          const newDose = {
+                            time: new Date().toLocaleTimeString(),
+                            dose: "10 mg IV",
+                            bp: patientData.bloodPressure
+                          }
+                          setMedicationProtocol({
+                            ...medicationProtocol,
+                            labetalolDoses: [...medicationProtocol.labetalolDoses, newDose]
+                          })
+                        }}
+                        className="w-full bg-green-600 text-white p-3 rounded-lg hover:bg-green-700 font-semibold"
+                      >
+                        Registrar Dosis Administrada
+                      </button>
+                    </div>
+                  )}
+
+                  {labetalolRecommendation.contraindicated && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded p-3 mt-3">
+                      <p className="text-yellow-800 text-sm">
+                        <strong>⚠️ Alternativas sugeridas:</strong> Nicardipina, Clevidipina, Esmolol (bajo supervisión)
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {medicationProtocol.labetalolDoses.length > 0 && (
+                <div className="bg-white p-4 rounded-lg border">
+                  <h4 className="font-semibold mb-3">Historial de Dosis</h4>
+                  <div className="space-y-2">
+                    {medicationProtocol.labetalolDoses.map((dose, index) => (
+                      <div key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded text-sm">
+                        <span>{dose.time}</span>
+                        <span>{dose.dose}</span>
+                        <span>TA: {dose.bp}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h4 className="font-semibold text-blue-800 mb-2">📋 Protocolo Hospital Central de Pilar</h4>
+            <div className="text-sm text-blue-700 space-y-1">
+              <p><strong>Indicación:</strong> TA &gt;185/110 mmHg antes de trombolisis</p>
+              <p><strong>Labetalol:</strong> 10 mg IV durante 1 a 2 min; puede repetirse cada 10 a 20 min hasta máximo 300 mg</p>
+              <p><strong>Alternativa:</strong> 10 mg IV seguido de infusión 2-8 mg/min</p>
+              <p><strong>Meta:</strong> Reducir TA a ≤185/110 mmHg si NO controla o bradicardia, considerar nicardipina de sodio 0.5-10 mg/kg/min</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const tabs = [
     { id: "dashboard", label: "Dashboard", icon: Activity },
     { id: "checklist", label: "Checklist", icon: CheckSquare },
@@ -1729,6 +2369,7 @@ const StrokeProtocolApp = () => {
     { id: "aspects", label: "ASPECTS", icon: Brain },
     { id: "thrombectomy", label: "Trombectomía", icon: Activity },
     { id: "rtpa", label: "rtPA", icon: canAccessTab("rtpa") ? Calculator : Lock },
+    { id: "labetalol", label: "Labetalol", icon: Syringe },
     { id: "reports", label: "Casos", icon: Clock },
     { id: "email", label: "Emails", icon: User },
   ]
@@ -1780,6 +2421,7 @@ const StrokeProtocolApp = () => {
         {activeTab === "aspects" && renderAspects()}
         {activeTab === "thrombectomy" && renderThrombectomy()}
         {activeTab === "rtpa" && renderRtPA()}
+        {activeTab === "labetalol" && renderLabetalol()}
         {activeTab === "reports" && renderReports()}
         {activeTab === "email" && renderEmailConfig()}
       </div>
