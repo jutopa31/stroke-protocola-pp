@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import AspectsSchematic from "./components/aspects-schematic"
 import {
   Clock,
   Calculator,
@@ -13,6 +14,34 @@ import {
   Syringe,
   Lock,
 } from "lucide-react"
+
+const ASPECTS_REGION_KEYS = [
+  "caudate",
+  "putamen",
+  "internalCapsule",
+  "insular",
+  "m1",
+  "m2",
+  "m3",
+  "m4",
+  "m5",
+  "m6",
+] as const
+
+type AspectsRegionKey = (typeof ASPECTS_REGION_KEYS)[number]
+
+const INITIAL_ASPECTS_REGIONS: Record<AspectsRegionKey, boolean> = {
+  caudate: true,
+  putamen: true,
+  internalCapsule: true,
+  insular: true,
+  m1: true,
+  m2: true,
+  m3: true,
+  m4: true,
+  m5: true,
+  m6: true,
+}
 
 const StrokeProtocolApp = () => {
   const [activeTab, setActiveTab] = useState("dashboard")
@@ -63,22 +92,12 @@ const StrokeProtocolApp = () => {
   const [thrombectomy, setThrombectomy] = useState({
     timeWindow: "",
     largeVesselOcclusion: false,
+    basilarOcclusion: false,
     premorbidMRS: 0,
-    contraindications: { lifeExpectancy: false, intracranialHemorrhage: false, rapidImprovement: false },
+    contraindications: { lifeExpectancy: false, intracranialHemorrhage: false, rapidImprovement: false, massEffect: false },
   })
 
-  const [aspectsRegions, setAspectsRegions] = useState({
-    caudate: true,
-    putamen: true,
-    internalCapsule: true,
-    insular: true,
-    m1: true,
-    m2: true,
-    m3: true,
-    m4: true,
-    m5: true,
-    m6: true,
-  })
+  const [aspectsRegions, setAspectsRegions] = useState(INITIAL_ASPECTS_REGIONS)
 
   const [savedCases, setSavedCases] = useState([])
   const [currentCaseId, setCurrentCaseId] = useState(null)
@@ -152,6 +171,25 @@ const StrokeProtocolApp = () => {
     return Object.values(aspectsRegions).filter(Boolean).length
   }
 
+  const toggleAspectsRegion = (regionKey: AspectsRegionKey) => {
+    setAspectsRegions((current) => ({
+      ...current,
+      [regionKey]: !current[regionKey],
+    }))
+  }
+
+  const setAllAspectsRegions = (isNormal: boolean) => {
+    setAspectsRegions(
+      ASPECTS_REGION_KEYS.reduce(
+        (acc, key) => {
+          acc[key] = isNormal
+          return acc
+        },
+        {} as Record<AspectsRegionKey, boolean>,
+      ),
+    )
+  }
+
   // Funciones de validación mejoradas
   const getTrombolisisEligibility = () => {
     const nihssTotal = calculateNihssTotal()
@@ -203,8 +241,9 @@ const StrokeProtocolApp = () => {
     const nihssTotal = calculateNihssTotal()
     const aspectsScore = calculateAspects()
     const reasons = []
+    const warnings = []
 
-    // Criterios específicos para trombectomía
+    // Criterios de exclusión — AHA 2026
     if (!thrombectomy.largeVesselOcclusion) {
       reasons.push("No hay oclusión de gran vaso confirmada (requiere angioTC/angioRM)")
     }
@@ -213,21 +252,17 @@ const StrokeProtocolApp = () => {
       reasons.push(`NIHSS ${nihssTotal} <6 puntos (umbral mínimo para trombectomía mecánica)`)
     }
 
-    if (aspectsScore < 6) {
-      reasons.push(`ASPECTS ${aspectsScore} <6 puntos (alto riesgo de transformación hemorrágica)`)
-    }
-
-    if (thrombectomy.premorbidMRS > 2) {
-      reasons.push(`mRS premórbido ${thrombectomy.premorbidMRS} >2 (dependencia funcional previa significativa)`)
-    }
-
     if (!thrombectomy.timeWindow) {
       reasons.push("Ventana temporal no definida")
     } else if (thrombectomy.timeWindow === ">24h") {
       reasons.push("Ventana temporal >24 horas (fuera de criterios estándar)")
     }
 
-    // Contraindicaciones específicas
+    // Contraindicaciones absolutas
+    if (thrombectomy.contraindications.massEffect) {
+      reasons.push("Efecto de masa importante o desviación de línea media significativa")
+    }
+
     if (thrombectomy.contraindications.lifeExpectancy) {
       reasons.push("Expectativa de vida <6 meses (mal pronóstico basal)")
     }
@@ -240,16 +275,25 @@ const StrokeProtocolApp = () => {
       reasons.push("Mejoría neurológica rápida (NIHSS mejora >4 puntos)")
     }
 
+    // Advertencias — no excluyen pero requieren consideración individual (AHA 2026)
+    if (aspectsScore >= 3 && aspectsScore <= 5) {
+      warnings.push(`ASPECTS ${aspectsScore} (3–5): large core — evidencia fuerte AHA 2026 si no hay efecto de masa`)
+    } else if (aspectsScore <= 2) {
+      warnings.push(`ASPECTS ${aspectsScore} (0–2): large core extenso — considerar en casos seleccionados (sin efecto de masa, contexto clínico favorable)`)
+    }
+
+    if (thrombectomy.premorbidMRS > 2) {
+      warnings.push(`mRS premórbido ${thrombectomy.premorbidMRS}: discapacidad previa — AHA 2026 no lo contraindica; objetivo: reducir mortalidad y discapacidad adicional`)
+    }
+
     const eligible =
       thrombectomy.largeVesselOcclusion &&
       nihssTotal >= 6 &&
-      aspectsScore >= 6 &&
-      thrombectomy.premorbidMRS <= 2 &&
       thrombectomy.timeWindow &&
       thrombectomy.timeWindow !== ">24h" &&
       !Object.values(thrombectomy.contraindications).some(Boolean)
 
-    return { eligible, aspects: aspectsScore, nihss: nihssTotal, reasons }
+    return { eligible, aspects: aspectsScore, nihss: nihssTotal, reasons, warnings }
   }
 
   // Función para verificar si se puede acceder a una pestaña
@@ -1009,7 +1053,24 @@ const StrokeProtocolApp = () => {
     </div>
   )
 
-  const renderAspects = () => (
+  const renderAspects = () => {
+    const basalRegions: Array<{ key: AspectsRegionKey; label: string }> = [
+      { key: "caudate", label: "C - Núcleo caudado" },
+      { key: "putamen", label: "L - Núcleo lentiforme" },
+      { key: "internalCapsule", label: "IC - Cápsula interna" },
+      { key: "insular", label: "I - Ínsula" },
+      { key: "m1", label: "M1 - Corteza MCA anterior" },
+      { key: "m2", label: "M2 - Corteza MCA lateral" },
+      { key: "m3", label: "M3 - Corteza MCA posterior" },
+    ]
+
+    const supraganglionicRegions: Array<{ key: AspectsRegionKey; label: string }> = [
+      { key: "m4", label: "M4 - Territorio MCA anterior superior" },
+      { key: "m5", label: "M5 - Territorio MCA lateral superior" },
+      { key: "m6", label: "M6 - Territorio MCA posterior superior" },
+    ]
+
+    return (
     <div className="space-y-6">
       <div className="bg-white p-6 rounded-lg shadow">
         <h2 className="text-xl font-bold mb-4 flex items-center">
@@ -1018,63 +1079,66 @@ const StrokeProtocolApp = () => {
         </h2>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="bg-gray-50 p-6 rounded-lg">
-            <h3 className="text-lg font-semibold mb-4">Territorio ACM - Regiones ASPECTS</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Marque las regiones que están <strong>normales</strong> (sin isquemia). Desmarque las que tienen cambios
-              isquémicos tempranos.
-            </p>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <h4 className="font-medium text-sm text-gray-700">Ganglios Basales</h4>
-                {[
-                  { key: "caudate", label: "Núcleo Caudado" },
-                  { key: "putamen", label: "Putamen" },
-                  { key: "internalCapsule", label: "Cápsula Interna" },
-                ].map((region) => (
-                  <label key={region.key} className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={aspectsRegions[region.key]}
-                      onChange={(e) =>
-                        setAspectsRegions({
-                          ...aspectsRegions,
-                          [region.key]: e.target.checked,
-                        })
-                      }
-                      className="rounded"
-                    />
-                    <span className="text-sm">{region.label}</span>
-                  </label>
-                ))}
+          <div className="space-y-4">
+            <AspectsSchematic aspectsRegions={aspectsRegions} onToggle={toggleAspectsRegion} />
+
+            <div className="bg-gray-50 p-6 rounded-lg border">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold">Territorio ACM - Regiones ASPECTS</h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Mantenga marcadas las regiones <strong>normales</strong>. Desmarque las que muestran cambios
+                    isquémicos tempranos.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAllAspectsRegions(true)}
+                    className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                  >
+                    Todo normal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAllAspectsRegions(false)}
+                    className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                  >
+                    Todo afectado
+                  </button>
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <h4 className="font-medium text-sm text-gray-700">Corteza</h4>
-                {[
-                  { key: "insular", label: "Ínsula (I)" },
-                  { key: "m1", label: "M1 (frontal)" },
-                  { key: "m2", label: "M2 (frontoparietal)" },
-                  { key: "m3", label: "M3 (temporal anterior)" },
-                  { key: "m4", label: "M4 (temporal medio)" },
-                  { key: "m5", label: "M5 (temporal posterior)" },
-                  { key: "m6", label: "M6 (parietal inferior)" },
-                ].map((region) => (
-                  <label key={region.key} className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={aspectsRegions[region.key]}
-                      onChange={(e) =>
-                        setAspectsRegions({
-                          ...aspectsRegions,
-                          [region.key]: e.target.checked,
-                        })
-                      }
-                      className="rounded"
-                    />
-                    <span className="text-sm">{region.label}</span>
-                  </label>
-                ))}
+              <div className="mt-5 grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <h4 className="font-medium text-sm uppercase tracking-wide text-gray-700">Ganglios basales</h4>
+                  {basalRegions.map((region) => (
+                    <label key={region.key} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={aspectsRegions[region.key]}
+                        onChange={() => toggleAspectsRegion(region.key)}
+                        className="rounded"
+                      />
+                      <span className="text-sm">{region.label}</span>
+                    </label>
+                  ))}
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="font-medium text-sm uppercase tracking-wide text-gray-700">Nivel supraganglionar</h4>
+                  {supraganglionicRegions.map((region) => (
+                    <label key={region.key} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={aspectsRegions[region.key]}
+                        onChange={() => toggleAspectsRegion(region.key)}
+                        className="rounded"
+                      />
+                      <span className="text-sm">{region.label}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -1085,27 +1149,35 @@ const StrokeProtocolApp = () => {
               <div className="text-4xl font-bold text-blue-600 mb-4">{calculateAspects()}/10</div>
 
               <div className="space-y-2">
-                <div
-                  className={`p-3 rounded ${calculateAspects() >= 6 ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}
-                >
-                  {calculateAspects() >= 6
-                    ? "✅ ASPECTS ≥6 - Elegible para trombectomía"
-                    : "❌ ASPECTS <6 - Alto riesgo de sangrado"}
-                </div>
-
-                {calculateAspects() >= 8 && (
-                  <div className="p-3 bg-green-200 text-green-900 rounded">
-                    🌟 ASPECTS excelente (≥8) - Muy buen pronóstico
+                {calculateAspects() >= 6 && (
+                  <div className="p-3 rounded bg-green-100 text-green-800">
+                    ✅ ASPECTS ≥6 — Candidato estándar para trombectomía
+                  </div>
+                )}
+                {calculateAspects() >= 3 && calculateAspects() <= 5 && (
+                  <div className="p-3 rounded bg-yellow-100 text-yellow-800">
+                    ⚠️ ASPECTS 3–5 — Large core: evidencia fuerte AHA 2026 si no hay efecto de masa
+                  </div>
+                )}
+                {calculateAspects() <= 2 && (
+                  <div className="p-3 rounded bg-orange-100 text-orange-800">
+                    ⚠️ ASPECTS 0–2 — Large core extenso: considerar en casos seleccionados (AHA 2026)
                   </div>
                 )}
 
-                {calculateAspects() < 6 && (
-                  <div className="p-3 bg-orange-100 text-orange-800 rounded text-sm">
-                    <strong>⚠️ Consideraciones:</strong>
+                {calculateAspects() >= 8 && (
+                  <div className="p-3 bg-green-200 text-green-900 rounded">
+                    🌟 ASPECTS excelente (≥8) — Muy buen pronóstico
+                  </div>
+                )}
+
+                {calculateAspects() <= 5 && (
+                  <div className="p-3 bg-blue-100 text-blue-800 rounded text-sm">
+                    <strong>💡 Clave AHA 2026:</strong>
                     <ul className="list-disc list-inside mt-1">
-                      <li>Alto riesgo de transformación hemorrágica</li>
-                      <li>Evaluar beneficio vs riesgo individualmente</li>
-                      <li>Considerar consulta con neurólogo vascular</li>
+                      <li>El "core" no siempre es tejido totalmente perdido</li>
+                      <li>Puede haber tejido recuperable dentro del área necrótica</li>
+                      <li>Verificar ausencia de efecto de masa y desviación de línea media</li>
                     </ul>
                   </div>
                 )}
@@ -1113,27 +1185,39 @@ const StrokeProtocolApp = () => {
             </div>
 
             <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="font-semibold text-gray-800 mb-2">Interpretación ASPECTS</h4>
+              <h4 className="font-semibold text-gray-800 mb-2">Interpretación ASPECTS — AHA 2026</h4>
               <div className="text-sm text-gray-700 space-y-1">
                 <p>
                   <strong>10 puntos:</strong> Sin cambios isquémicos
                 </p>
                 <p>
-                  <strong>8-9 puntos:</strong> Cambios mínimos, excelente pronóstico
+                  <strong>8–9 puntos:</strong> Cambios mínimos, excelente pronóstico
                 </p>
                 <p>
-                  <strong>6-7 puntos:</strong> Cambios moderados, buen candidato
+                  <strong>6–7 puntos:</strong> Cambios moderados, buen candidato
                 </p>
                 <p>
-                  <strong>{"<"}6 puntos:</strong> Cambios extensos, alto riesgo
+                  <strong>3–5 puntos:</strong> Large core — evidencia fuerte si sin efecto de masa
+                </p>
+                <p>
+                  <strong>0–2 puntos:</strong> Large core extenso — casos seleccionados
                 </p>
               </div>
+            </div>
+
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <p className="font-semibold">Base del diagrama</p>
+              <p className="mt-1 leading-6">
+                Esta vista sigue el esquema publicado de ASPECTS en dos cortes axiales estandarizados. Es una guía
+                geométrica para puntuar C, L, IC, I y M1-M6; no reemplaza la lectura sobre TC real.
+              </p>
             </div>
           </div>
         </div>
       </div>
     </div>
-  )
+    )
+  }
 
   const renderThrombectomy = () => {
     const eligibility = getThrombectomyEligibility()
