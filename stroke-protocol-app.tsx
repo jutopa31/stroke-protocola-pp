@@ -13,7 +13,7 @@ import {
   Syringe,
   Lock,
 } from "lucide-react"
-import AspectsBrain, { AspectsRegions } from "@/components/aspects-brain"
+import AspectsSchematic from "@/components/aspects-schematic"
 
 const StrokeProtocolApp = () => {
   const [activeTab, setActiveTab] = useState("dashboard")
@@ -261,7 +261,7 @@ const StrokeProtocolApp = () => {
       case "thrombectomy":
         return protocolProgress.nihssCompleted
       case "aspects":
-        return protocolProgress.nihssCompleted
+        return true
       default:
         return true
     }
@@ -1017,8 +1017,8 @@ const StrokeProtocolApp = () => {
           <Brain className="h-6 w-6 mr-2" />
           Escala ASPECTS
         </h2>
-        <AspectsBrain
-          regions={aspectsRegions}
+        <AspectsSchematic
+          aspectsRegions={aspectsRegions}
           onToggle={(key) =>
             setAspectsRegions((prev) => ({ ...prev, [key]: !prev[key] }))
           }
