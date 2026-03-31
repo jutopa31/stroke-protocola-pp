@@ -13,6 +13,7 @@ import {
   Syringe,
   Lock,
 } from "lucide-react"
+import AspectsBrain, { AspectsRegions } from "@/components/aspects-brain"
 
 const StrokeProtocolApp = () => {
   const [activeTab, setActiveTab] = useState("dashboard")
@@ -1016,121 +1017,12 @@ const StrokeProtocolApp = () => {
           <Brain className="h-6 w-6 mr-2" />
           Escala ASPECTS
         </h2>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="bg-gray-50 p-6 rounded-lg">
-            <h3 className="text-lg font-semibold mb-4">Territorio ACM - Regiones ASPECTS</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Marque las regiones que están <strong>normales</strong> (sin isquemia). Desmarque las que tienen cambios
-              isquémicos tempranos.
-            </p>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <h4 className="font-medium text-sm text-gray-700">Ganglios Basales</h4>
-                {[
-                  { key: "caudate", label: "Núcleo Caudado" },
-                  { key: "putamen", label: "Putamen" },
-                  { key: "internalCapsule", label: "Cápsula Interna" },
-                ].map((region) => (
-                  <label key={region.key} className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={aspectsRegions[region.key]}
-                      onChange={(e) =>
-                        setAspectsRegions({
-                          ...aspectsRegions,
-                          [region.key]: e.target.checked,
-                        })
-                      }
-                      className="rounded"
-                    />
-                    <span className="text-sm">{region.label}</span>
-                  </label>
-                ))}
-              </div>
-
-              <div className="space-y-2">
-                <h4 className="font-medium text-sm text-gray-700">Corteza</h4>
-                {[
-                  { key: "insular", label: "Ínsula (I)" },
-                  { key: "m1", label: "M1 (frontal)" },
-                  { key: "m2", label: "M2 (frontoparietal)" },
-                  { key: "m3", label: "M3 (temporal anterior)" },
-                  { key: "m4", label: "M4 (temporal medio)" },
-                  { key: "m5", label: "M5 (temporal posterior)" },
-                  { key: "m6", label: "M6 (parietal inferior)" },
-                ].map((region) => (
-                  <label key={region.key} className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={aspectsRegions[region.key]}
-                      onChange={(e) =>
-                        setAspectsRegions({
-                          ...aspectsRegions,
-                          [region.key]: e.target.checked,
-                        })
-                      }
-                      className="rounded"
-                    />
-                    <span className="text-sm">{region.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="bg-blue-50 p-6 rounded-lg">
-              <h3 className="text-lg font-semibold mb-2">Score ASPECTS</h3>
-              <div className="text-4xl font-bold text-blue-600 mb-4">{calculateAspects()}/10</div>
-
-              <div className="space-y-2">
-                <div
-                  className={`p-3 rounded ${calculateAspects() >= 6 ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}
-                >
-                  {calculateAspects() >= 6
-                    ? "✅ ASPECTS ≥6 - Elegible para trombectomía"
-                    : "❌ ASPECTS <6 - Alto riesgo de sangrado"}
-                </div>
-
-                {calculateAspects() >= 8 && (
-                  <div className="p-3 bg-green-200 text-green-900 rounded">
-                    🌟 ASPECTS excelente (≥8) - Muy buen pronóstico
-                  </div>
-                )}
-
-                {calculateAspects() < 6 && (
-                  <div className="p-3 bg-orange-100 text-orange-800 rounded text-sm">
-                    <strong>⚠️ Consideraciones:</strong>
-                    <ul className="list-disc list-inside mt-1">
-                      <li>Alto riesgo de transformación hemorrágica</li>
-                      <li>Evaluar beneficio vs riesgo individualmente</li>
-                      <li>Considerar consulta con neurólogo vascular</li>
-                    </ul>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="font-semibold text-gray-800 mb-2">Interpretación ASPECTS</h4>
-              <div className="text-sm text-gray-700 space-y-1">
-                <p>
-                  <strong>10 puntos:</strong> Sin cambios isquémicos
-                </p>
-                <p>
-                  <strong>8-9 puntos:</strong> Cambios mínimos, excelente pronóstico
-                </p>
-                <p>
-                  <strong>6-7 puntos:</strong> Cambios moderados, buen candidato
-                </p>
-                <p>
-                  <strong>{"<"}6 puntos:</strong> Cambios extensos, alto riesgo
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+        <AspectsBrain
+          regions={aspectsRegions}
+          onToggle={(key) =>
+            setAspectsRegions((prev) => ({ ...prev, [key]: !prev[key] }))
+          }
+        />
       </div>
     </div>
   )
