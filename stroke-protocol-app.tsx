@@ -484,16 +484,16 @@ const StrokeProtocolApp = () => {
   const renderDashboard = () => (
     <div className="space-y-6">
       {isCodeActivated && (
-        <div className="bg-red-50 border-l-4 border-red-500 p-4 animate-pulse">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <AlertTriangle className="h-6 w-6 text-red-500 mr-2" />
-              <h2 className="text-xl font-bold text-red-700">CÓDIGO ACV ACTIVADO</h2>
+        <div className="bg-red-50 border-l-4 border-red-500 p-3 sm:p-4 animate-pulse">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center min-w-0">
+              <AlertTriangle className="h-6 w-6 text-red-500 mr-2 shrink-0" />
+              <h2 className="text-lg sm:text-xl font-bold text-red-700">CÓDIGO ACV ACTIVADO</h2>
             </div>
             <button
               onClick={finishCase}
               disabled={!protocolProgress.canFinishCase}
-              className={`px-4 py-2 rounded text-sm font-medium ${
+              className={`shrink-0 px-4 py-2 rounded text-sm font-medium ${
                 protocolProgress.canFinishCase
                   ? "bg-gray-600 text-white hover:bg-gray-700"
                   : "bg-gray-300 text-gray-500 cursor-not-allowed"
@@ -503,8 +503,8 @@ const StrokeProtocolApp = () => {
               {protocolProgress.canFinishCase ? "Finalizar Caso" : "Completar Protocolo"}
             </button>
           </div>
-          <p className="text-sm text-red-600 mt-2">
-            ⏰ Tiempo transcurrido: {formatTime(elapsedTime)} | 📧 Equipo notificado automáticamente
+          <p className="text-xs sm:text-sm text-red-600 mt-2">
+            ⏰ Tiempo: {formatTime(elapsedTime)} | 📧 Equipo notificado
           </p>
 
           {!protocolProgress.canFinishCase && (
@@ -522,20 +522,23 @@ const StrokeProtocolApp = () => {
       )}
 
       {!isCodeActivated && (
-        <div className="bg-blue-50 border-l-4 border-blue-500 p-4">
+        <div className="bg-blue-50 border-l-4 border-blue-500 p-3 sm:p-4">
           <div className="flex items-center">
-            <Activity className="h-6 w-6 text-blue-500 mr-2" />
-            <h2 className="text-xl font-bold text-blue-700">Protocolo de Stroke - Listo para Activar</h2>
+            <Activity className="h-6 w-6 text-blue-500 mr-2 shrink-0" />
+            <h2 className="text-base sm:text-xl font-bold text-blue-700">
+              <span className="hidden sm:inline">Protocolo de Stroke - Listo para Activar</span>
+              <span className="sm:hidden">Protocolo - Listo para Activar</span>
+            </h2>
           </div>
-          <p className="text-sm text-blue-600 mt-2">
-            Sistema preparado para código ACV. Complete los datos del paciente y active el protocolo.
+          <p className="text-xs sm:text-sm text-blue-600 mt-2">
+            Sistema preparado para código ACV. Complete los datos y active el protocolo.
           </p>
         </div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-lg shadow border">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-white p-4 sm:p-6 rounded-lg shadow border">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-3">
             <h3 className="text-lg font-semibold flex items-center">
               <Timer className="h-5 w-5 mr-2" />
               {isCodeActivated ? "Timer Código ACV" : "Activación de Código"}
@@ -543,7 +546,7 @@ const StrokeProtocolApp = () => {
             {!isTimerRunning && (
               <button
                 onClick={startCodeStroke}
-                className="bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 font-semibold flex items-center"
+                className="w-full sm:w-auto bg-red-600 text-white px-4 sm:px-6 py-3 rounded-lg hover:bg-red-700 font-semibold flex items-center justify-center"
               >
                 <AlertTriangle className="h-5 w-5 mr-2" />
                 ACTIVAR CÓDIGO ACV
@@ -582,7 +585,7 @@ const StrokeProtocolApp = () => {
           )}
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow border">
+        <div className="bg-white p-4 sm:p-6 rounded-lg shadow border">
           <h3 className="text-lg font-semibold mb-4 flex items-center">
             <User className="h-5 w-5 mr-2" />
             Datos del Paciente
@@ -660,7 +663,7 @@ const StrokeProtocolApp = () => {
       </div>
 
       <div className="bg-white p-4 rounded-lg shadow border">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h3 className="text-lg font-semibold">Registro del Caso</h3>
             <p className="text-sm text-gray-600">Guardar datos del paciente en Excel</p>
@@ -668,7 +671,7 @@ const StrokeProtocolApp = () => {
           <button
             onClick={saveCase}
             disabled={!protocolProgress.canFinishCase}
-            className={`px-6 py-3 rounded-lg flex items-center font-medium ${
+            className={`w-full sm:w-auto px-6 py-3 rounded-lg flex items-center justify-center font-medium ${
               protocolProgress.canFinishCase
                 ? "bg-blue-600 text-white hover:bg-blue-700"
                 : "bg-gray-300 text-gray-500 cursor-not-allowed"
@@ -954,16 +957,16 @@ const StrokeProtocolApp = () => {
                     <strong className="text-lg">CANDIDATO PARA TROMBOLISIS</strong>
                   </div>
                   <p className="text-sm mb-3">Todos los criterios de inclusión cumplidos, sin criterios de exclusión</p>
-                  <div className="flex space-x-3">
+                  <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() => setActiveTab("rtpa")}
-                      className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                      className="flex-1 sm:flex-none bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 text-sm"
                     >
                       Calcular Dosis rtPA
                     </button>
                     <button
                       onClick={() => setActiveTab("thrombectomy")}
-                      className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                      className="flex-1 sm:flex-none bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm"
                     >
                       Evaluar Trombectomía
                     </button>
@@ -1366,7 +1369,7 @@ const StrokeProtocolApp = () => {
 
     return (
       <div className="space-y-6">
-        <div className="bg-white p-6 rounded-lg shadow">
+        <div className="bg-white p-4 sm:p-6 rounded-lg shadow">
           <h2 className="text-xl font-bold mb-4 flex items-center">
             <Calculator className="h-6 w-6 mr-2" />
             Calculadora rtPA
@@ -1463,7 +1466,7 @@ const StrokeProtocolApp = () => {
         </h2>
 
         <div className="mb-4">
-          <button onClick={exportToExcel} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 mr-4">
+          <button onClick={exportToExcel} className="w-full sm:w-auto bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
             Exportar Caso Actual
           </button>
         </div>
@@ -1570,7 +1573,7 @@ const StrokeProtocolApp = () => {
           </div>
 
           <div className="bg-blue-50 p-6 rounded-lg">
-            <h3 className="text-lg font-semibold mb-4 text-blue-800">Tipos de Notificaciones</h3>
+            <h3 className="text-lg font-semibold mb-3 sm:mb-4 text-blue-800">Tipos de Notificaciones</h3>
 
             <div className="space-y-4 text-sm">
               <div className="bg-white p-3 rounded border">
@@ -1627,17 +1630,20 @@ const StrokeProtocolApp = () => {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <div className="bg-white shadow">
+      <div className="bg-white shadow sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="py-4">
-            <h1 className="text-2xl font-bold text-gray-900">Protocolo Interactivo de Stroke - Código ACV</h1>
+          <div className="py-3 sm:py-4">
+            <h1 className="text-base sm:text-2xl font-bold text-gray-900 truncate">
+              <span className="hidden sm:inline">Protocolo Interactivo de Stroke - Código ACV</span>
+              <span className="sm:hidden">Protocolo Stroke ACV</span>
+            </h1>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <div className="bg-white rounded-lg shadow p-1">
-          <nav className="flex space-x-1">
+      <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-2 sm:py-4">
+        <div className="bg-white rounded-lg shadow overflow-hidden">
+          <nav className="flex overflow-x-auto scrollbar-hide p-1 gap-1">
             {tabs.map((tab) => {
               const Icon = tab.icon
               const canAccess = canAccessTab(tab.id)
@@ -1646,7 +1652,7 @@ const StrokeProtocolApp = () => {
                   key={tab.id}
                   onClick={() => (canAccess ? setActiveTab(tab.id) : null)}
                   disabled={!canAccess}
-                  className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`flex items-center px-2.5 py-2 sm:px-4 rounded-md text-xs sm:text-sm font-medium transition-colors flex-shrink-0 whitespace-nowrap ${
                     activeTab === tab.id
                       ? "bg-blue-600 text-white"
                       : canAccess
@@ -1655,7 +1661,7 @@ const StrokeProtocolApp = () => {
                   }`}
                   title={!canAccess && tab.id === "rtpa" ? "Complete criterios de trombolisis primero" : ""}
                 >
-                  <Icon className="h-4 w-4 mr-2" />
+                  <Icon className="h-4 w-4 mr-1 sm:mr-2 shrink-0" />
                   {tab.label}
                   {!canAccess && tab.id === "rtpa" && <Lock className="h-3 w-3 ml-1" />}
                 </button>
@@ -1665,7 +1671,7 @@ const StrokeProtocolApp = () => {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
+      <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 pb-8 pb-safe">
         {activeTab === "dashboard" && renderDashboard()}
         {activeTab === "checklist" && renderChecklist()}
         {activeTab === "nihss" && renderNIHSS()}
